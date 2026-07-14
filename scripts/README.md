@@ -1,3 +1,3 @@
-# Analysis Scripts
+# Analysis Script
 
-This folder contains scripts for data cleaning, exploratory analysis, modeling, and visualization.
+This folder contains the script for data cleaning, exploratory analysis, modeling, and visualization.
