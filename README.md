@@ -21,10 +21,12 @@ The analysis was conducted as part of graduate research at Texas A&M University.
 
 ## Repository Structure
 
-data/     Dataset documentation
-scripts/  Analysis code
-output/   Figures and model outputs
-docs/     Project documentation
+| Folder | Description |
+|---------|-------------|
+| data/ | Dataset documentation |
+| scripts/ | Analysis code |
+| output/ | Figures and model outputs |
+| docs/ | Project documentation |
 
 ## Data Source
 
