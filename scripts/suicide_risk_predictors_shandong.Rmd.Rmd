@@ -1,0 +1,302 @@
+---
+title: "Suicide Risk Predictors in Shandong, China — EDA & Logistic Regression"
+author: "Carmen Roland"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 7,
+  fig.height = 5
+)
+options(scipen = 999)
+```
+
+## Overview
+
+This analysis explores predictors of the suicide-attempt outcome (`Died`: yes/no) in the Shandong suicide attempts dataset, and fits a binomial logistic regression model, with associated diagnostics.
+
+**Variables of interest:** `Died` (outcome); `Urban`, `Age`, `Sex`,
+`Education`, `Method` (predictors).
+
+## Libraries
+
+```{r libraries}
+library(tidyverse)
+library(Hmisc)
+library(DEGreport)
+library(lmtest)
+library(alr4)
+library(car)
+library(RcmdrMisc)
+library(pROC)
+library(performance)
+library(see)
+library(DHARMa)
+library(glmtoolbox)
+library(MASS)
+library(e1071)
+library(caret)
+```
+
+## Data Import (Set directory)
+
+```{r import}
+data <- read.csv("SuicideChina - Working File - Copy.csv")
+
+head(data)
+
+# Summarize dataset
+summary(data)
+
+# Display rows and columns
+dim(data)
+```
+
+```{r missing-values}
+# Missing values per column
+sapply(data, function(x) sum(is.na(x)))
+```
+
+```{r frequency-tables}
+table(data$Died)
+table(data$Urban)
+table(data$Sex)
+table(data$Education)
+table(data$Method)
+```
+
+## Univariate Visualizations
+
+```{r plot-died}
+ggplot(data = data, aes(x = Died)) +
+  geom_bar(fill = "red", color = "black") +
+  ggtitle("Outcome of Suicide Attempt")
+```
+
+```{r plot-urban}
+ggplot(data = data, aes(x = Urban)) +
+  geom_bar(fill = "red", color = "black") +
+  ggtitle("Location of Suicide Attempt")
+```
+
+```{r plot-age}
+ggplot(data = data, aes(x = Age)) +
+  geom_histogram(fill = "red", color = "black") +
+  ggtitle("Age Distribution")
+```
+
+```{r plot-sex}
+ggplot(data = data, aes(x = Sex)) +
+  geom_bar(fill = "red", color = "black") +
+  ggtitle("Sex Distribution")
+```
+
+```{r plot-education}
+ggplot(data = data, aes(x = Education)) +
+  geom_bar(fill = "red", color = "black") +
+  ggtitle("Education")
+```
+
+```{r plot-method}
+ggplot(data = data, aes(x = Method)) +
+  geom_bar(fill = "red", color = "black") +
+  ggtitle("Method")
+```
+
+## Bivariate Visualizations (Died vs. Predictors)
+
+```{r bivariate-urban}
+ggplot(data = data, aes(x = Died, fill = Urban)) +
+  geom_bar(position = "dodge") +
+  ggtitle("Number of Deaths/Attempts by Location of Attempt")
+```
+
+```{r bivariate-age}
+ggplot(data = data, aes(x = Age, fill = Died)) +
+  geom_bar(position = "dodge") +
+  ggtitle("Age and Number of Deaths/Attempts")
+```
+
+```{r bivariate-sex}
+ggplot(data = data, aes(x = Died, fill = Sex)) +
+  geom_bar(position = "dodge") +
+  ggtitle("Number of Deaths/Attempts by Sex")
+```
+
+```{r bivariate-education}
+ggplot(data = data, aes(x = Died, fill = Education)) +
+  geom_bar(position = "dodge") +
+  ggtitle("Number of Deaths/Attempts by Education")
+```
+
+```{r bivariate-method}
+ggplot(data = data, aes(x = Died, fill = Method)) +
+  geom_bar(position = "dodge") +
+  ggtitle("Number of Deaths/Attempts by Method")
+```
+
+## Data Preparation for Modeling
+
+```{r prep-data}
+df <- data.frame(
+  died      = factor(data$Died),
+  urban     = factor(data$Urban),
+  sex       = factor(data$Sex),
+  age       = data$Age,
+  education = factor(data$Education),
+  method    = factor(data$Method)
+)
+
+head(df)
+
+# Set reference levels
+df$urban_RL     <- relevel(df$urban, ref = "unknown")
+df$education_RL <- relevel(df$education, ref = "unknown")
+df$Method_RL    <- relevel(df$method, ref = "unspecified")
+```
+
+## Logistic Regression Model
+
+```{r fit-model}
+fit <- glm(
+  died ~ urban_RL + age + education_RL + sex + Method_RL,
+  family = binomial,
+  data   = df
+)
+
+summary(fit)
+Anova(fit)
+```
+
+## Confidence Intervals
+
+Computed directly from the fitted model (not hardcoded), on both the log-odds and odds-ratio scales.
+
+```{r confint}
+ci_log_odds <- confint(fit, level = 0.95)
+ci_log_odds
+
+or_table <- cbind(
+  OR = exp(coef(fit)),
+  exp(ci_log_odds)
+)
+or_table
+```
+
+## Model Checking
+
+```{r hltest}
+# Hosmer-Lemeshow test — high p-value indicates adequate fit
+hltest(fit)
+```
+
+```{r stepwise}
+# Stepwise regression — sample is large enough; nothing dropped
+stepwise(fit, direction = "backward/forward", criteria = c("BIC"))
+stepwise(fit, direction = "backward/forward", criteria = c("AIC"))  # matches BIC
+```
+
+```{r performance}
+model_performance(fit)
+```
+
+## Simulation-Based Residual Diagnostics (DHARMa) 
+
+Note: Generalized linear model residuals are not expected to follow a normal distribution and require simulation-based diagnostics.
+
+```{r dharma-setup}
+plotConventionalResiduals(fit)
+testDispersion(fit)
+
+simulation_output <- simulateResiduals(fittedModel = fit, plot = FALSE)
+residuals(simulation_output)
+```
+
+```{r dharma-plots}
+plotQQunif(simulation_output)
+plotResiduals(simulation_output)
+plotResiduals(simulation_output, form = df$age)
+```
+
+```{r dharma-categorical-tests}
+testCategorical(simulation_output, catPred = df$urban)
+testCategorical(simulation_output, catPred = df$education)
+testCategorical(simulation_output, catPred = df$Method_RL)
+testCategorical(simulation_output, catPred = df$sex)
+```
+
+```{r dharma-global-tests}
+testUniformity(simulation_output)
+testOutliers(simulation_output)
+testDispersion(simulation_output)
+testQuantiles(simulation_output)
+```
+
+## ROC Curve
+
+```{r roc}
+fitted_probs <- predict(fit, type = "response")
+roc_curve    <- roc(df$died ~ fitted_probs)
+roc_curve$auc
+
+plot(
+  1 - roc_curve$specificities, roc_curve$sensitivities,
+  type = "l", lwd = 2,
+  xlab = "1 - Specificity", ylab = "Sensitivity"
+)
+abline(a = 0, b = 1)
+```
+
+## Interaction Model
+
+Method is excluded from interactions (it causes overfitting); interactions were not significant regardless.
+
+```{r interaction-model}
+fit_interaction <- glm(
+  died ~ urban_RL + age + education_RL + Method_RL +
+    urban_RL * age + urban_RL * education_RL + age * education_RL,
+  family = binomial,
+  data   = df
+)
+
+summary(fit_interaction)
+
+lrtest(fit_interaction, fit)  # not significant — simpler model preferred
+```
+
+## Classification / Confusion Matrix
+
+```{r confusion-matrix}
+prop_died  <- 1256 / 2571
+prop_lived <- 1315 / 2571
+prop_died
+prop_lived
+
+df$outcome <- ifelse(df$died == "yes", 1, 0)
+head(df)
+
+my_steps    <- step(fit, died ~ urban_RL + age + education_RL + sex + Method_RL,
+                     data = df, family = "binomial")
+fitted_vals <- fitted(my_steps)
+
+confusionMatrix(
+  data      = as.factor(as.numeric(fitted_vals > 0.5)),
+  reference = as.factor(df$outcome)
+)
+```
+
+## Key Findings
+
+- The following predictors significantly predict suicide: sex (female), location of residence (rural), age, highest education level and method of attempt (except for other poison, and poison with type unspecified.) 
+- All predictors independently predict suicide death and are not modified by a third predictor (an interaction.)
+- The final logistic regression model achieved an AUC of 0.8936.
+
+ 
